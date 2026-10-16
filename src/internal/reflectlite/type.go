@@ -1344,12 +1344,108 @@ func align(offset uintptr, alignment uintptr) uintptr {
 	return (offset + alignment - 1) &^ (alignment - 1)
 }
 
+var sliceOfCache map[*RawType]*RawType
+
 func SliceOf(t Type) Type {
-	panic("unimplemented: reflect.SliceOf()")
+	if t == nil {
+		panic("reflect.SliceOf: nil element type")
+	}
+	switch t {
+	case TypeOf(bool(false)):
+		return TypeOf([]bool(nil))
+	case TypeOf(int(0)):
+		return TypeOf([]int(nil))
+	case TypeOf(int8(0)):
+		return TypeOf([]int8(nil))
+	case TypeOf(int16(0)):
+		return TypeOf([]int16(nil))
+	case TypeOf(int32(0)):
+		return TypeOf([]int32(nil))
+	case TypeOf(int64(0)):
+		return TypeOf([]int64(nil))
+	case TypeOf(uint(0)):
+		return TypeOf([]uint(nil))
+	case TypeOf(uint8(0)):
+		return TypeOf([]uint8(nil))
+	case TypeOf(uint16(0)):
+		return TypeOf([]uint16(nil))
+	case TypeOf(uint32(0)):
+		return TypeOf([]uint32(nil))
+	case TypeOf(uint64(0)):
+		return TypeOf([]uint64(nil))
+	case TypeOf(uintptr(0)):
+		return TypeOf([]uintptr(nil))
+	case TypeOf(float32(0)):
+		return TypeOf([]float32(nil))
+	case TypeOf(float64(0)):
+		return TypeOf([]float64(nil))
+	case TypeOf(complex64(0)):
+		return TypeOf([]complex64(nil))
+	case TypeOf(complex128(0)):
+		return TypeOf([]complex128(nil))
+	case TypeOf(""):
+		return TypeOf([]string(nil))
+	}
+	raw := t.(*RawType)
+	if sliceOfCache == nil {
+		sliceOfCache = make(map[*RawType]*RawType)
+	}
+	if st, ok := sliceOfCache[raw]; ok {
+		return st
+	}
+	st := &elemType{
+		RawType: RawType{meta: uint8(Slice)},
+		elem:    raw,
+	}
+	pt := &ptrType{
+		RawType: RawType{meta: uint8(Pointer) | flagComparable | flagIsBinary},
+		elem:    &st.RawType,
+	}
+	st.ptrTo = &pt.RawType
+	sliceOfCache[raw] = &st.RawType
+	return &st.RawType
 }
 
+type arrayCacheKey struct {
+	n int
+	t *RawType
+}
+
+var arrayOfCache map[arrayCacheKey]*RawType
+
 func ArrayOf(n int, t Type) Type {
-	panic("unimplemented: reflect.ArrayOf()")
+	if n < 0 {
+		panic("reflect: negative length passed to ArrayOf")
+	}
+	raw := t.(*RawType)
+	if arrayOfCache == nil {
+		arrayOfCache = make(map[arrayCacheKey]*RawType)
+	}
+	key := arrayCacheKey{n: n, t: raw}
+	if at, ok := arrayOfCache[key]; ok {
+		return at
+	}
+	meta := uint8(Array)
+	if raw.Comparable() {
+		meta |= flagComparable
+	}
+	if raw.isBinary() {
+		meta |= flagIsBinary
+	}
+	at := &arrayType{
+		RawType:  RawType{meta: meta},
+		elem:     raw,
+		arrayLen: uintptr(n),
+		slicePtr: SliceOf(t).(*RawType),
+		layout:   gclayout.NoPtrs.AsPtr(),
+	}
+	pt := &ptrType{
+		RawType: RawType{meta: uint8(Pointer) | flagComparable | flagIsBinary},
+		elem:    &at.RawType,
+	}
+	at.ptrTo = &pt.RawType
+	arrayOfCache[key] = &at.RawType
+	return &at.RawType
 }
 
 func StructOf([]StructField) Type {
